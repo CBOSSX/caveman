@@ -319,6 +319,39 @@ test('standalone hooks keep a stable PATH node symlink', { skip: process.platfor
   }
 });
 
+test('caveman-init uses the Node process running the installer', { skip: process.platform === 'win32' && 'POSIX executable fixture' }, () => {
+  const dir = freshTmpDir();
+  const fakeBin = path.join(dir, 'fake-bin');
+  const fakeNodeCalled = path.join(dir, 'fake-node-called');
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, 'node'), `#!/bin/sh\n: > "${fakeNodeCalled}"\nexit 1\n`);
+  fs.chmodSync(path.join(fakeBin, 'node'), 0o755);
+
+  try {
+    const r = spawnSync(process.execPath, [
+      INSTALLER, '--with-init', '--skip-skills', '--non-interactive',
+      '--no-mcp-shrink', '--config-dir', path.join(dir, 'claude-config'),
+    ], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        HOME: path.join(dir, 'home'),
+        PATH: fakeBin,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+
+    assert.equal(r.status, 0, r.stderr || r.stdout);
+    assert.equal(fs.existsSync(fakeNodeCalled), false,
+      'caveman-init must not use a different Node executable found on PATH');
+    assert.ok(fs.existsSync(path.join(dir, '.cursor', 'rules', 'caveman.mdc')),
+      'caveman-init did not write the per-repo rule files');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── Test: idempotent install (run twice, no duplication) ───────────────────
 test('idempotent install does not duplicate hook entries (skipped without `claude` CLI)', { skip: !hasClaudeCli() && 'claude CLI not on PATH' }, () => {
   const dir = freshTmpDir();
